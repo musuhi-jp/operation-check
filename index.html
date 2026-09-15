@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>運行チェックリスト</title>
+<style>
+  :root{
+    --ink:#12202e; --steel:#3a5468; --line:#d7dee5; --paper:#eef2f5; --card:#ffffff;
+    --done:#1f9d63; --done-bg:#e7f6ee; --amber:#c8781a; --amber-bg:#fbefdc;
+    --alert:#c23b3b; --alert-bg:#fbe6e6; --accent:#155e9c;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    color:var(--ink);background:var(--paper);line-height:1.5;padding:0 0 env(safe-area-inset-bottom);
+    -webkit-text-size-adjust:100%;}
+  .wrap{max-width:560px;margin:0 auto;padding:0 16px 40px}
+  header{position:sticky;top:0;z-index:5;background:var(--paper);padding:14px 16px 10px;max-width:560px;margin:0 auto}
+  .title{font-size:18px;font-weight:800;letter-spacing:.02em;margin:0}
+  .meta{display:flex;justify-content:space-between;align-items:baseline;margin-top:2px;color:var(--steel);font-size:13px}
+  .meta b{color:var(--ink)}
+  .sync{font-size:12px;margin-top:6px;text-align:right;color:var(--steel);min-height:16px}
+  .sync.ok{color:var(--done)}
+  .sync.warn{color:var(--amber);font-weight:700}
+  .steps{display:flex;gap:6px;margin-top:10px}
+  .dot{flex:1;height:6px;border-radius:3px;background:var(--line)}
+  .dot.done{background:var(--done)}
+  .dot.now{background:var(--accent)}
+  .tabs{display:flex;gap:8px;margin-top:12px}
+  .tab{flex:1;padding:9px;border:1px solid var(--line);background:var(--card);border-radius:10px;
+    font-size:14px;font-weight:700;color:var(--steel);text-align:center}
+  .tab.on{color:var(--card);background:var(--accent);border-color:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 18px;margin-top:14px}
+  .no{display:inline-block;font-size:14px;font-weight:800;color:var(--accent);letter-spacing:.06em}
+  .task{font-size:24px;font-weight:800;margin:6px 0 4px;line-height:1.35}
+  .hint{color:var(--steel);font-size:14px;margin:0 0 18px}
+  .btn{display:block;width:100%;border:2px solid var(--line);background:var(--card);border-radius:14px;
+    padding:18px;font-size:19px;font-weight:800;color:var(--ink);margin-bottom:12px;cursor:pointer;transition:transform .05s}
+  .btn:active{transform:scale(.99)}
+  .btn.sel{background:var(--done-bg);border-color:var(--done);color:var(--done)}
+  .btn.sel::after{content:" ✓";font-weight:900}
+  .btn.na{color:var(--steel)}
+  .btn.na.sel{background:var(--amber-bg);border-color:var(--amber);color:var(--amber)}
+  .err{background:var(--alert-bg);color:var(--alert);border:1px solid var(--alert);border-radius:12px;
+    padding:12px 14px;font-weight:800;font-size:15px;margin:2px 0 14px;display:none}
+  .err.show{display:block}
+  @keyframes shake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(4px)}50%{transform:translateX(-4px)}}
+  .shake{animation:shake .35s}
+  .nav{display:flex;gap:10px;margin-top:6px}
+  .nav button{flex:1;border:none;border-radius:14px;padding:17px;font-size:18px;font-weight:800;cursor:pointer}
+  .back{background:var(--card);border:1px solid var(--line)!important;color:var(--steel)}
+  .next{background:var(--accent);color:#fff}
+  .list{padding:0;margin:14px 0 0}
+  .list li{list-style:none;display:flex;align-items:center;gap:12px;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin:0 0 8px}
+  .mark{width:26px;height:26px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;
+    font-weight:900;background:var(--line);color:var(--card)}
+  .mark.done{background:var(--done)}
+  .mark.na{background:var(--amber)}
+  .li-body{flex:1;min-width:0}
+  .li-task{font-weight:700;font-size:15px}
+  .li-sub{font-size:12.5px;color:var(--steel)}
+  .alldone{text-align:center;padding:26px 18px}
+  .alldone .big{font-size:22px;font-weight:800;color:var(--done)}
+  .export{display:block;width:100%;background:var(--done);color:#fff;border:none;border-radius:14px;
+    padding:17px;font-size:18px;font-weight:800;margin-top:14px;cursor:pointer}
+  .send{display:block;width:100%;background:var(--accent);color:#fff;border:none;border-radius:14px;
+    padding:15px;font-size:16px;font-weight:800;margin-top:10px;cursor:pointer}
+  .subtle{display:block;width:100%;background:none;border:none;color:var(--steel);text-decoration:underline;
+    font-size:14px;margin-top:16px;cursor:pointer;padding:8px}
+  .start{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 20px;margin-top:20px}
+  .start label{display:block;font-weight:800;margin-bottom:8px}
+  .start input{width:100%;font-size:22px;font-weight:800;text-align:center;letter-spacing:.15em;
+    text-transform:uppercase;padding:16px;border:2px solid var(--line);border-radius:12px}
+  .start .go{margin-top:16px}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title">運行チェックリスト</h1>
+  <div class="meta"><span id="date">—</span><span>担当 <b id="who">—</b></span></div>
+  <div class="sync" id="sync"></div>
+  <div class="steps" id="steps"></div>
+  <div class="tabs" id="tabs" style="display:none">
+    <div class="tab on" data-v="run">進行</div>
+    <div class="tab" data-v="all">一覧</div>
+  </div>
+</header>
+
+<main class="wrap" id="main"></main>
+
+<script>
+"use strict";
+
+/* ===== 管理者のApps ScriptのURL（受け取り係） ===== */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxWFlD3_pzciYNkAEi6C4ghJB6Y57yUIgUK2nUtRQQwtAskUf4z0k6UPBa_Wqlq8qY7cw/exec";
+
+const KEY = "unko-checklist-v1";
+const TASKS = [
+  {no:"①", name:"出発前点呼",           type:"single", label:"した"},
+  {no:"②", name:"日常車体点検",         type:"single", label:"した"},
+  {no:"③", name:"建材の場合、写真送付", type:"choice", opts:[{t:"写真を送付した"},{t:"建材以外なのでナシ",na:true}]},
+  {no:"④", name:"空車連絡",             type:"single", label:"した"},
+  {no:"⑤", name:"給油",                 type:"single", label:"した"},
+  {no:"⑥", name:"燃費管理表の記載",     type:"single", label:"記載した"},
+  {no:"⑦", name:"洗車",                 type:"choice", opts:[{t:"洗車した"},{t:"洗車日ではない",na:true}]},
+  {no:"⑧", name:"帰庫点呼",             type:"single", label:"した"},
+  {no:"⑨", name:"翌日の積み込み・ルート等の確認", type:"single", label:"確認した"},
+];
+
+/* ---- 状態 ---- */
+function load(){
+  let s;
+  try{ s = JSON.parse(localStorage.getItem(KEY)); }catch(e){ s = null; }
+  if(!s || typeof s!=="object") s = {};
+  s.initials = s.initials || "";
+  s.log = Array.isArray(s.log) ? s.log : [];
+  s.queue = (s.queue && typeof s.queue==="object") ? s.queue : {};
+  return s;
+}
+function save(s){ localStorage.setItem(KEY, JSON.stringify(s)); }
+let S = load();
+let view = "run";
+
+function today(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function nowTime(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return `${p(d.getHours())}:${p(d.getMinutes())}`; }
+function todayEntry(idx){ return S.log.find(e=>e.date===today() && e.i===idx) || null; }
+
+function upsert(idx, content){
+  const t = TASKS[idx];
+  const time = nowTime();
+  S.log = S.log.filter(e=>!(e.date===today() && e.i===idx));
+  S.log.push({date:today(), initials:S.initials, i:idx, no:t.no, name:t.name, content, time});
+  const id = `${today()}|${S.initials}|${t.no}`;
+  S.queue[id] = {date:today(), initials:S.initials, no:t.no, name:t.name, content, time};
+  save(S);
+  flushQueue();
+}
+function doneCount(){ return TASKS.filter((_,i)=>todayEntry(i)).length; }
+function firstUndone(){ for(let i=0;i<TASKS.length;i++){ if(!todayEntry(i)) return i; } return TASKS.length; }
+let cur = 0;
+
+/* ---- 送信（オフライン対応・自動再送） ---- */
+let flushing = false;
+async function flushQueue(){
+  updatePending();
+  const keys = Object.keys(S.queue);
+  if(flushing || keys.length===0) return;
+  if(!GAS_URL || GAS_URL.indexOf("http")!==0) return;
+  if(!navigator.onLine) return;
+  flushing = true;
+  const batch = keys.map(k=>S.queue[k]);
+  try{
+    await fetch(GAS_URL, {
+      method:"POST", mode:"no-cors",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify({rows:batch})
+    });
+    keys.forEach(k=>{ delete S.queue[k]; });
+    save(S);
+  }catch(err){ /* 圏外など。キューは残して次の機会に再送 */ }
+  flushing = false;
+  updatePending();
+}
+function pendingCount(){ return Object.keys(S.queue).length; }
+function updatePending(){
+  const el = document.getElementById("sync");
+  if(!el) return;
+  if(!GAS_URL || GAS_URL.indexOf("http")!==0){ el.textContent=""; el.className="sync"; return; }
+  const n = pendingCount();
+  if(n===0){ el.textContent="✓ 記録は送信済み"; el.className="sync ok"; }
+  else if(navigator.onLine){ el.textContent=`送信中… (${n}件)`; el.className="sync"; }
+  else { el.textContent=`オフライン・${n}件を保留中（電波が戻れば自動送信)`; el.className="sync warn"; }
+}
+
+/* ---- 描画 ---- */
+const $ = id => document.getElementById(id);
+function paintHeader(){
+  $("date").textContent = today().replace(/-/g,"/");
+  $("who").textContent = S.initials || "—";
+  const box=$("steps"); box.innerHTML="";
+  TASKS.forEach((_,i)=>{ const d=document.createElement("div");
+    d.className="dot"+(todayEntry(i)?" done":(i===cur && view==="run" && S.initials?" now":"")); box.appendChild(d); });
+  $("tabs").style.display = S.initials ? "flex" : "none";
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on", t.dataset.v===view));
+  updatePending();
+}
+function render(){
+  const m=$("main");
+  if(!S.initials){ renderStart(m); paintHeader(); return; }
+  if(view==="all"){ renderAll(m); paintHeader(); return; }
+  cur=Math.min(cur,TASKS.length);
+  if(cur>=TASKS.length){ renderDone(m); paintHeader(); return; }
+  renderCard(m); paintHeader();
+}
+function renderStart(m){
+  m.innerHTML=`<div class="start">
+    <label for="ini">イニシャルを入力してください</label>
+    <input id="ini" maxlength="6" placeholder="例：TK" inputmode="latin" autocomplete="off">
+    <div class="nav"><button class="next go" id="startBtn">開始する</button></div></div>`;
+  const inp=$("ini"); inp.focus();
+  $("startBtn").onclick=()=>{ const v=inp.value.trim().toUpperCase();
+    if(!v){ inp.style.borderColor="var(--alert)"; inp.focus(); return; }
+    S.initials=v; save(S); cur=firstUndone(); view="run"; render(); };
+  inp.onkeydown=e=>{ if(e.key==="Enter") $("startBtn").click(); };
+}
+function renderCard(m){
+  const t=TASKS[cur], e=todayEntry(cur);
+  let btns="";
+  if(t.type==="single"){ btns=`<button class="btn ${e?"sel":""}" data-c="${t.label}">${t.label}</button>`; }
+  else{ btns=t.opts.map(o=>{ const on=e&&e.content===o.t;
+    return `<button class="btn ${o.na?"na":""} ${on?"sel":""}" data-c="${o.t}">${o.t}</button>`; }).join(""); }
+  m.innerHTML=`<div class="card">
+      <span class="no">${t.no} / ⑨</span>
+      <div class="task">${t.name}</div>
+      <p class="hint">${t.type==="choice"?"どちらかを選んでください":"完了したらタップしてください"}</p>
+      <div id="err" class="err">✓ チェックしてください</div>
+      ${btns}
+    </div>
+    <div class="nav">
+      ${cur>0?'<button class="back" id="back">戻る</button>':''}
+      <button class="next" id="next">次へ</button></div>`;
+  m.querySelectorAll(".btn").forEach(b=>{ b.onclick=()=>{ upsert(cur,b.dataset.c);
+    $("err").classList.remove("show"); renderCard(m); paintHeader(); }; });
+  if($("back")) $("back").onclick=()=>{ cur=Math.max(0,cur-1); render(); };
+  $("next").onclick=()=>{ if(!todayEntry(cur)){ const el=$("err"); el.classList.add("show","shake");
+      setTimeout(()=>el.classList.remove("shake"),400); return; } cur++; render(); };
+}
+function renderAll(m){
+  const items=TASKS.map((t,i)=>{ const e=todayEntry(i);
+    const na=e&&t.type==="choice"&&t.opts.find(o=>o.t===e.content&&o.na);
+    const cls=e?(na?"na":"done"):""; const mark=e?(na?"–":"✓"):(i+1);
+    const sub=e?`${e.content}　${e.time}`:"未実施";
+    return `<li><div class="mark ${cls}">${mark}</div>
+      <div class="li-body"><div class="li-task">${t.no} ${t.name}</div><div class="li-sub">${sub}</div></div></li>`;
+  }).join("");
+  const done=doneCount();
+  m.innerHTML=`<ul class="list">${items}</ul>
+    <div style="text-align:center;color:var(--steel);font-size:14px;margin-top:10px">本日 ${done} / 9 完了</div>
+    ${done===9?'':`<div class="nav" style="margin-top:14px"><button class="next" id="cont">未実施へ進む</button></div>`}
+    <button class="send" id="send">今すぐ送信する</button>
+    <button class="export" id="exp">CSVを書き出す（予備）</button>
+    <button class="subtle" id="reset">本日分をリセット</button>`;
+  if($("cont")) $("cont").onclick=()=>{ cur=firstUndone(); view="run"; render(); };
+  $("send").onclick=()=>{ flushQueue(); };
+  $("exp").onclick=exportCSV; $("reset").onclick=resetToday;
+}
+function renderDone(m){
+  const rows=TASKS.map((t,i)=>{ const e=todayEntry(i);
+    return `<li><div class="mark ${e?(t.type==="choice"&&t.opts.find(o=>o.t===e.content&&o.na)?"na":"done"):""}">✓</div>
+      <div class="li-body"><div class="li-task">${t.no} ${t.name}</div><div class="li-sub">${e.content}　${e.time}</div></div></li>`;
+  }).join("");
+  m.innerHTML=`<div class="card alldone">
+      <div class="big">本日分すべて完了しました</div>
+      <div style="color:var(--steel);font-size:14px;margin-top:6px">担当 ${S.initials}　${today().replace(/-/g,"/")}</div></div>
+    <ul class="list">${rows}</ul>
+    <button class="send" id="send">今すぐ送信する</button>
+    <button class="export" id="exp">CSVを書き出す（予備）</button>
+    <button class="subtle" id="reset">本日分をリセット</button>`;
+  $("send").onclick=()=>{ flushQueue(); };
+  $("exp").onclick=exportCSV; $("reset").onclick=resetToday;
+}
+
+/* ---- 予備のCSV書き出し・リセット ---- */
+function exportCSV(){
+  if(S.log.length===0){ alert("書き出すデータがありません。"); return; }
+  const head=["日付","イニシャル","No","タスク","実施内容","チェック時刻"];
+  const sorted=[...S.log].sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:a.i-b.i);
+  const esc=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const lines=[head.join(",")].concat(sorted.map(e=>[e.date,e.initials,e.no,e.name,e.content,e.time].map(esc).join(",")));
+  const blob=new Blob(["\uFEFF"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url; a.download=`運行チェック_${S.initials}_${today()}.csv`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function resetToday(){
+  if(!confirm("本日分のチェックをすべて消します。よろしいですか？")) return;
+  S.log=S.log.filter(e=>e.date!==today());
+  Object.keys(S.queue).forEach(k=>{ if(k.indexOf(today()+"|")===0) delete S.queue[k]; });
+  save(S); cur=0; view="run"; render();
+}
+
+/* ---- 起動 ---- */
+document.querySelectorAll(".tab").forEach(t=>{ t.onclick=()=>{ view=t.dataset.v; render(); }; });
+window.addEventListener("online", flushQueue);
+setInterval(flushQueue, 20000);
+cur=firstUndone();
+render();
+flushQueue();
+</script>
+</body>
+</html>

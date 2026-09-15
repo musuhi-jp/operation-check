@@ -73,7 +73,7 @@
     font-size:14px;margin-top:16px;cursor:pointer;padding:8px}
   /* 送信フィードバック */
   .pbar{height:16px;background:var(--line);border-radius:9px;overflow:hidden;margin-top:14px}
-  .pfill{height:100%;width:0;background:var(--accent);border-radius:9px;transition:width .5s ease}
+  .pfill{height:100%;width:0;background:var(--accent);border-radius:9px;transition:width .55s ease}
   .pmsg{text-align:center;font-weight:800;margin-top:10px;font-size:16px;color:var(--steel)}
   .sresult{margin-top:14px;padding:18px;border-radius:14px;text-align:center;font-weight:800;font-size:18px}
   .sresult.ok{background:var(--done-bg);color:var(--done);border:2px solid var(--done)}
@@ -101,6 +101,7 @@
 
 <script>
 "use strict";
+const $ = id => document.getElementById(id);
 
 /* ===== 管理者のApps ScriptのURL（受け取り係） ===== */
 const GAS_URL = "https://script.google.com/macros/s/AKfycbxWFlD3_pzciYNkAEi6C4ghJB6Y57yUIgUK2nUtRQQwtAskUf4z0k6UPBa_Wqlq8qY7cw/exec";
@@ -113,7 +114,7 @@ const TASKS = [
   {no:"④", name:"空車連絡",             type:"repeat", opts:[
         {t:"した：まだ他に空車連絡がある", more:true},
         {t:"した：本日最後の空車連絡",     final:true}]},
-  {no:"⑤", name:"給油",                 type:"single", label:"した"},
+  {no:"⑤", name:"給油",                 type:"choice", opts:[{t:"給油した"},{t:"今日は給油日ではない",na:true}]},
   {no:"⑥", name:"燃費管理表の記載",     type:"single", label:"記載した"},
   {no:"⑦", name:"洗車",                 type:"choice", opts:[{t:"洗車した"},{t:"洗車日ではない",na:true}]},
   {no:"⑧", name:"帰庫点呼",             type:"single", label:"した"},
@@ -133,7 +134,7 @@ function load(){
 function save(s){ localStorage.setItem(KEY, JSON.stringify(s)); }
 let S = load();
 let view = "run";
-let repeatSel = null;   // 空車連絡カードで選択中の項目
+let repeatSel = null;
 
 function today(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
 function nowTime(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return `${p(d.getHours())}:${p(d.getMinutes())}`; }
@@ -145,7 +146,6 @@ function doneCount(){ return TASKS.filter((_,i)=>isDone(i)).length; }
 function firstUndone(){ for(let i=0;i<TASKS.length;i++){ if(!isDone(i)) return i; } return TASKS.length; }
 let cur = 0;
 
-/* 通常タスク（1回きり）の記録 */
 function upsert(idx, content){
   const t = TASKS[idx];
   const time = nowTime();
@@ -154,7 +154,6 @@ function upsert(idx, content){
   S.queue[`${today()}|${S.initials}|${t.no}`] = {date:today(), initials:S.initials, no:t.no, name:t.name, content, time};
   save(S); flushQueue();
 }
-/* 空車連絡（複数回）の記録 */
 function commitRepeat(){
   const t = TASKS[cur];
   const opt = t.opts[repeatSel];
@@ -171,29 +170,32 @@ function commitRepeat(){
 
 /* ---- 送信（オフライン対応・自動再送） ---- */
 let flushing = false;
-async function flushQueue(){
-  updatePending();
-  const keys = Object.keys(S.queue);
-  if(flushing || keys.length===0) return;
-  if(!GAS_URL || GAS_URL.indexOf("http")!==0) return;
-  if(!navigator.onLine) return;
-  flushing = true;
-  const batch = keys.map(k=>S.queue[k]);
+async function postBatch(items){
   try{
     await fetch(GAS_URL, {
       method:"POST", mode:"no-cors",
       headers:{"Content-Type":"text/plain;charset=utf-8"},
-      body: JSON.stringify({rows:batch})
+      body: JSON.stringify({rows:items})
     });
-    keys.forEach(k=>{ delete S.queue[k]; });
-    save(S);
-  }catch(err){ /* 圏外など。キューは残して次の機会に再送 */ }
+    return true;
+  }catch(e){ return false; }
+}
+async function flushQueue(){
+  updatePending();
+  if(flushing) return;
+  const keys = Object.keys(S.queue);
+  if(keys.length===0) return;
+  if(!GAS_URL || GAS_URL.indexOf("http")!==0) return;
+  if(!navigator.onLine) return;
+  flushing = true;
+  const ok = await postBatch(keys.map(k=>S.queue[k]));
+  if(ok){ keys.forEach(k=>{ delete S.queue[k]; }); save(S); }
   flushing = false;
   updatePending();
 }
 function pendingCount(){ return Object.keys(S.queue).length; }
 function updatePending(){
-  const el = document.getElementById("sync");
+  const el = $("sync");
   if(!el) return;
   if(!GAS_URL || GAS_URL.indexOf("http")!==0){ el.textContent=""; el.className="sync"; return; }
   const n = pendingCount();
@@ -202,7 +204,7 @@ function updatePending(){
   else { el.textContent=`オフライン・${n}件を保留中`; el.className="sync warn"; }
 }
 
-/* 「今すぐ送信する」— 大きなプログレスバー＋結果表示 */
+/* 「今すぐ送信する」— 送信中(プログレスバー)→ 送信終了 を同じ場所に表示 */
 async function manualSend(){
   const box = $("sendStatus");
   if(!box) return;
@@ -216,27 +218,34 @@ async function manualSend(){
     box.innerHTML = `<div class="sresult warn">オフラインのため送信できません<br><span style="font-size:14px;font-weight:700">${before}件を保留中（電波が戻れば自動送信)</span></div>`;
     return;
   }
-  box.innerHTML = `<div class="pbar"><div class="pfill" id="pfill"></div></div><div class="pmsg">送信中…</div>`;
+  // 送信中 + プログレスバー
+  box.innerHTML = `<div class="pbar"><div class="pfill" id="pfill"></div></div><div class="pmsg" id="pmsg">送信中…</div>`;
   const fill = $("pfill");
-  requestAnimationFrame(()=>{ if(fill) fill.style.width="75%"; });
-  await flushQueue();
+  requestAnimationFrame(()=>{ if(fill) fill.style.width="70%"; });
+  // キューが空になるまで送り切る（最大3回試行）
+  for(let tries=0; tries<3 && pendingCount()>0 && navigator.onLine; tries++){
+    const keys = Object.keys(S.queue);
+    const sent = await postBatch(keys.map(k=>S.queue[k]));
+    if(sent){ keys.forEach(k=>{ delete S.queue[k]; }); save(S); }
+    else break;
+  }
   if(fill) fill.style.width="100%";
+  updatePending();
   setTimeout(()=>{
     if(!$("sendStatus")) return;
     const left = pendingCount();
     if(left===0){
-      $("sendStatus").innerHTML = `<div class="sresult ok">✓ 送信しました（${before}件)</div>`;
+      $("sendStatus").innerHTML = `<div class="sresult ok">✓ 送信終了</div>`;
       setTimeout(()=>{ if($("sendStatus")) $("sendStatus").innerHTML=""; }, 4000);
     }else if(!navigator.onLine){
       $("sendStatus").innerHTML = `<div class="sresult warn">${left}件が未送信です<br><span style="font-size:14px;font-weight:700">電波が戻れば自動で送信します</span></div>`;
     }else{
-      $("sendStatus").innerHTML = `<div class="sresult warn">送信を試みました（残り${left}件)</div>`;
+      $("sendStatus").innerHTML = `<div class="sresult warn">${left}件が未送信です<br><span style="font-size:14px;font-weight:700">もう一度「今すぐ送信する」を押してください</span></div>`;
     }
-  }, 450);
+  }, 650);
 }
 
 /* ---- 描画 ---- */
-const $ = id => document.getElementById(id);
 function paintHeader(){
   $("date").textContent = today().replace(/-/g,"/");
   $("who").textContent = S.initials || "—";
@@ -318,10 +327,8 @@ function statusCell(t,i){
   const es=entriesFor(i);
   if(t.type==="repeat"){
     const fin=es.some(e=>e.final);
-    const cls=fin?"done":"";
-    const mark=fin?"✓":(es.length?String(es.length):String(i+1));
-    const sub=es.length?`${es.length}回（${es.map(e=>e.time).join("、")})${fin?"":"・継続中"}`:"未実施";
-    return {cls,mark,sub};
+    return { cls:fin?"done":"", mark:fin?"✓":(es.length?String(es.length):String(i+1)),
+      sub:es.length?`${es.length}回（${es.map(e=>e.time).join("、")})${fin?"":"・継続中"}`:"未実施" };
   }
   const e=es[0]||null;
   const na=e&&t.type==="choice"&&t.opts.find(o=>o.t===e.content&&o.na);
@@ -345,7 +352,7 @@ function renderAll(m){
 }
 function renderDone(m){
   const rows=TASKS.map((t,i)=>{ const c=statusCell(t,i);
-    return `<li><div class="mark ${c.cls}">${c.mark==="✓"||c.cls==="done"||c.cls==="na"?(c.cls==="na"?"–":"✓"):c.mark}</div>
+    return `<li><div class="mark ${c.cls}">${c.mark}</div>
       <div class="li-body"><div class="li-task">${t.no} ${t.name}</div><div class="li-sub">${c.sub}</div></div></li>`;
   }).join("");
   m.innerHTML=`<div class="card alldone">

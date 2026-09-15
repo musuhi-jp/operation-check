@@ -35,6 +35,8 @@
   .no{display:inline-block;font-size:14px;font-weight:800;color:var(--accent);letter-spacing:.06em}
   .task{font-size:24px;font-weight:800;margin:6px 0 4px;line-height:1.35}
   .hint{color:var(--steel);font-size:14px;margin:0 0 18px}
+  .repeatlog{background:var(--paper);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--steel);margin-bottom:16px}
+  .repeatlog b{color:var(--ink)}
   .btn{display:block;width:100%;border:2px solid var(--line);background:var(--card);border-radius:14px;
     padding:18px;font-size:19px;font-weight:800;color:var(--ink);margin-bottom:12px;cursor:pointer;transition:transform .05s}
   .btn:active{transform:scale(.99)}
@@ -55,7 +57,7 @@
   .list li{list-style:none;display:flex;align-items:center;gap:12px;background:var(--card);
     border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin:0 0 8px}
   .mark{width:26px;height:26px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;
-    font-weight:900;background:var(--line);color:var(--card)}
+    font-weight:900;background:var(--line);color:var(--card);font-size:14px}
   .mark.done{background:var(--done)}
   .mark.na{background:var(--amber)}
   .li-body{flex:1;min-width:0}
@@ -66,9 +68,16 @@
   .export{display:block;width:100%;background:var(--done);color:#fff;border:none;border-radius:14px;
     padding:17px;font-size:18px;font-weight:800;margin-top:14px;cursor:pointer}
   .send{display:block;width:100%;background:var(--accent);color:#fff;border:none;border-radius:14px;
-    padding:15px;font-size:16px;font-weight:800;margin-top:10px;cursor:pointer}
+    padding:16px;font-size:17px;font-weight:800;margin-top:14px;cursor:pointer}
   .subtle{display:block;width:100%;background:none;border:none;color:var(--steel);text-decoration:underline;
     font-size:14px;margin-top:16px;cursor:pointer;padding:8px}
+  /* 送信フィードバック */
+  .pbar{height:16px;background:var(--line);border-radius:9px;overflow:hidden;margin-top:14px}
+  .pfill{height:100%;width:0;background:var(--accent);border-radius:9px;transition:width .5s ease}
+  .pmsg{text-align:center;font-weight:800;margin-top:10px;font-size:16px;color:var(--steel)}
+  .sresult{margin-top:14px;padding:18px;border-radius:14px;text-align:center;font-weight:800;font-size:18px}
+  .sresult.ok{background:var(--done-bg);color:var(--done);border:2px solid var(--done)}
+  .sresult.warn{background:var(--amber-bg);color:var(--amber);border:2px solid var(--amber)}
   .start{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 20px;margin-top:20px}
   .start label{display:block;font-weight:800;margin-bottom:8px}
   .start input{width:100%;font-size:22px;font-weight:800;text-align:center;letter-spacing:.15em;
@@ -101,7 +110,9 @@ const TASKS = [
   {no:"①", name:"出発前点呼",           type:"single", label:"した"},
   {no:"②", name:"日常車体点検",         type:"single", label:"した"},
   {no:"③", name:"建材の場合、写真送付", type:"choice", opts:[{t:"写真を送付した"},{t:"建材以外なのでナシ",na:true}]},
-  {no:"④", name:"空車連絡",             type:"single", label:"した"},
+  {no:"④", name:"空車連絡",             type:"repeat", opts:[
+        {t:"した：まだ他に空車連絡がある", more:true},
+        {t:"した：本日最後の空車連絡",     final:true}]},
   {no:"⑤", name:"給油",                 type:"single", label:"した"},
   {no:"⑥", name:"燃費管理表の記載",     type:"single", label:"記載した"},
   {no:"⑦", name:"洗車",                 type:"choice", opts:[{t:"洗車した"},{t:"洗車日ではない",na:true}]},
@@ -122,24 +133,41 @@ function load(){
 function save(s){ localStorage.setItem(KEY, JSON.stringify(s)); }
 let S = load();
 let view = "run";
+let repeatSel = null;   // 空車連絡カードで選択中の項目
 
 function today(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
 function nowTime(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return `${p(d.getHours())}:${p(d.getMinutes())}`; }
-function todayEntry(idx){ return S.log.find(e=>e.date===today() && e.i===idx) || null; }
 
+function entriesFor(idx){ return S.log.filter(e=>e.date===today() && e.i===idx); }
+function todayEntry(idx){ const a=entriesFor(idx); return a.length?a[0]:null; }
+function isDone(idx){ const t=TASKS[idx]; return t.type==="repeat" ? entriesFor(idx).some(e=>e.final) : entriesFor(idx).length>0; }
+function doneCount(){ return TASKS.filter((_,i)=>isDone(i)).length; }
+function firstUndone(){ for(let i=0;i<TASKS.length;i++){ if(!isDone(i)) return i; } return TASKS.length; }
+let cur = 0;
+
+/* 通常タスク（1回きり）の記録 */
 function upsert(idx, content){
   const t = TASKS[idx];
   const time = nowTime();
   S.log = S.log.filter(e=>!(e.date===today() && e.i===idx));
   S.log.push({date:today(), initials:S.initials, i:idx, no:t.no, name:t.name, content, time});
-  const id = `${today()}|${S.initials}|${t.no}`;
-  S.queue[id] = {date:today(), initials:S.initials, no:t.no, name:t.name, content, time};
-  save(S);
-  flushQueue();
+  S.queue[`${today()}|${S.initials}|${t.no}`] = {date:today(), initials:S.initials, no:t.no, name:t.name, content, time};
+  save(S); flushQueue();
 }
-function doneCount(){ return TASKS.filter((_,i)=>todayEntry(i)).length; }
-function firstUndone(){ for(let i=0;i<TASKS.length;i++){ if(!todayEntry(i)) return i; } return TASKS.length; }
-let cur = 0;
+/* 空車連絡（複数回）の記録 */
+function commitRepeat(){
+  const t = TASKS[cur];
+  const opt = t.opts[repeatSel];
+  const seq = entriesFor(cur).length + 1;
+  const time = nowTime();
+  const no = `${t.no}-${seq}`;
+  const content = opt.final ? `した（本日最後・${seq}回目)` : `した（${seq}回目・継続)`;
+  S.log.push({date:today(), initials:S.initials, i:cur, no, name:t.name, content, time, seq, final:!!opt.final});
+  S.queue[`${today()}|${S.initials}|${no}`] = {date:today(), initials:S.initials, no, name:t.name, content, time};
+  save(S); flushQueue();
+  repeatSel = null;
+  if(opt.final){ cur++; render(); } else { renderCard($("main")); paintHeader(); }
+}
 
 /* ---- 送信（オフライン対応・自動再送） ---- */
 let flushing = false;
@@ -170,8 +198,41 @@ function updatePending(){
   if(!GAS_URL || GAS_URL.indexOf("http")!==0){ el.textContent=""; el.className="sync"; return; }
   const n = pendingCount();
   if(n===0){ el.textContent="✓ 記録は送信済み"; el.className="sync ok"; }
-  else if(navigator.onLine){ el.textContent=`送信中… (${n}件)`; el.className="sync"; }
-  else { el.textContent=`オフライン・${n}件を保留中（電波が戻れば自動送信)`; el.className="sync warn"; }
+  else if(navigator.onLine){ el.textContent=`送信待ち ${n}件`; el.className="sync"; }
+  else { el.textContent=`オフライン・${n}件を保留中`; el.className="sync warn"; }
+}
+
+/* 「今すぐ送信する」— 大きなプログレスバー＋結果表示 */
+async function manualSend(){
+  const box = $("sendStatus");
+  if(!box) return;
+  const before = pendingCount();
+  if(before===0){
+    box.innerHTML = `<div class="sresult ok">✓ 送信済みです<br><span style="font-size:14px;font-weight:700">新しい記録はありません</span></div>`;
+    setTimeout(()=>{ if($("sendStatus")) $("sendStatus").innerHTML=""; }, 4000);
+    return;
+  }
+  if(!navigator.onLine){
+    box.innerHTML = `<div class="sresult warn">オフラインのため送信できません<br><span style="font-size:14px;font-weight:700">${before}件を保留中（電波が戻れば自動送信)</span></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="pbar"><div class="pfill" id="pfill"></div></div><div class="pmsg">送信中…</div>`;
+  const fill = $("pfill");
+  requestAnimationFrame(()=>{ if(fill) fill.style.width="75%"; });
+  await flushQueue();
+  if(fill) fill.style.width="100%";
+  setTimeout(()=>{
+    if(!$("sendStatus")) return;
+    const left = pendingCount();
+    if(left===0){
+      $("sendStatus").innerHTML = `<div class="sresult ok">✓ 送信しました（${before}件)</div>`;
+      setTimeout(()=>{ if($("sendStatus")) $("sendStatus").innerHTML=""; }, 4000);
+    }else if(!navigator.onLine){
+      $("sendStatus").innerHTML = `<div class="sresult warn">${left}件が未送信です<br><span style="font-size:14px;font-weight:700">電波が戻れば自動で送信します</span></div>`;
+    }else{
+      $("sendStatus").innerHTML = `<div class="sresult warn">送信を試みました（残り${left}件)</div>`;
+    }
+  }, 450);
 }
 
 /* ---- 描画 ---- */
@@ -181,7 +242,7 @@ function paintHeader(){
   $("who").textContent = S.initials || "—";
   const box=$("steps"); box.innerHTML="";
   TASKS.forEach((_,i)=>{ const d=document.createElement("div");
-    d.className="dot"+(todayEntry(i)?" done":(i===cur && view==="run" && S.initials?" now":"")); box.appendChild(d); });
+    d.className="dot"+(isDone(i)?" done":(i===cur && view==="run" && S.initials?" now":"")); box.appendChild(d); });
   $("tabs").style.display = S.initials ? "flex" : "none";
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on", t.dataset.v===view));
   updatePending();
@@ -191,6 +252,7 @@ function render(){
   if(!S.initials){ renderStart(m); paintHeader(); return; }
   if(view==="all"){ renderAll(m); paintHeader(); return; }
   cur=Math.min(cur,TASKS.length);
+  if(TASKS[cur] && TASKS[cur].type!=="repeat") repeatSel=null;
   if(cur>=TASKS.length){ renderDone(m); paintHeader(); return; }
   renderCard(m); paintHeader();
 }
@@ -206,7 +268,9 @@ function renderStart(m){
   inp.onkeydown=e=>{ if(e.key==="Enter") $("startBtn").click(); };
 }
 function renderCard(m){
-  const t=TASKS[cur], e=todayEntry(cur);
+  const t=TASKS[cur];
+  if(t.type==="repeat"){ renderRepeatCard(m); return; }
+  const e=todayEntry(cur);
   let btns="";
   if(t.type==="single"){ btns=`<button class="btn ${e?"sel":""}" data-c="${t.label}">${t.label}</button>`; }
   else{ btns=t.opts.map(o=>{ const on=e&&e.content===o.t;
@@ -227,46 +291,79 @@ function renderCard(m){
   $("next").onclick=()=>{ if(!todayEntry(cur)){ const el=$("err"); el.classList.add("show","shake");
       setTimeout(()=>el.classList.remove("shake"),400); return; } cur++; render(); };
 }
+function renderRepeatCard(m){
+  const t=TASKS[cur];
+  const done=entriesFor(cur);
+  const times=done.map(e=>e.time).join("、");
+  const btns=t.opts.map((o,k)=>{ const on=repeatSel===k;
+    return `<button class="btn ${o.more?"na":""} ${on?"sel":""}" data-k="${k}">${o.t}</button>`; }).join("");
+  m.innerHTML=`<div class="card">
+      <span class="no">${t.no} / ⑨</span>
+      <div class="task">${t.name}</div>
+      <p class="hint">空車連絡をしたら選んでください。本日中に何度もある場合は「まだ他に空車連絡がある」を選ぶと、次もこの画面が出ます。</p>
+      ${done.length?`<div class="repeatlog">本日ここまで <b>${done.length}回</b> 記録済み（${times})</div>`:''}
+      <div id="err" class="err">✓ チェックしてください</div>
+      ${btns}
+    </div>
+    <div class="nav">
+      ${cur>0?'<button class="back" id="back">戻る</button>':''}
+      <button class="next" id="next">次へ</button></div>`;
+  m.querySelectorAll(".btn").forEach(b=>{ b.onclick=()=>{ repeatSel=Number(b.dataset.k);
+    $("err").classList.remove("show"); renderRepeatCard(m); }; });
+  if($("back")) $("back").onclick=()=>{ repeatSel=null; cur=Math.max(0,cur-1); render(); };
+  $("next").onclick=()=>{ if(repeatSel===null){ const el=$("err"); el.classList.add("show","shake");
+      setTimeout(()=>el.classList.remove("shake"),400); return; } commitRepeat(); };
+}
+function statusCell(t,i){
+  const es=entriesFor(i);
+  if(t.type==="repeat"){
+    const fin=es.some(e=>e.final);
+    const cls=fin?"done":"";
+    const mark=fin?"✓":(es.length?String(es.length):String(i+1));
+    const sub=es.length?`${es.length}回（${es.map(e=>e.time).join("、")})${fin?"":"・継続中"}`:"未実施";
+    return {cls,mark,sub};
+  }
+  const e=es[0]||null;
+  const na=e&&t.type==="choice"&&t.opts.find(o=>o.t===e.content&&o.na);
+  return { cls:e?(na?"na":"done"):"", mark:e?(na?"–":"✓"):String(i+1), sub:e?`${e.content}　${e.time}`:"未実施" };
+}
 function renderAll(m){
-  const items=TASKS.map((t,i)=>{ const e=todayEntry(i);
-    const na=e&&t.type==="choice"&&t.opts.find(o=>o.t===e.content&&o.na);
-    const cls=e?(na?"na":"done"):""; const mark=e?(na?"–":"✓"):(i+1);
-    const sub=e?`${e.content}　${e.time}`:"未実施";
-    return `<li><div class="mark ${cls}">${mark}</div>
-      <div class="li-body"><div class="li-task">${t.no} ${t.name}</div><div class="li-sub">${sub}</div></div></li>`;
+  const items=TASKS.map((t,i)=>{ const c=statusCell(t,i);
+    return `<li><div class="mark ${c.cls}">${c.mark}</div>
+      <div class="li-body"><div class="li-task">${t.no} ${t.name}</div><div class="li-sub">${c.sub}</div></div></li>`;
   }).join("");
   const done=doneCount();
   m.innerHTML=`<ul class="list">${items}</ul>
     <div style="text-align:center;color:var(--steel);font-size:14px;margin-top:10px">本日 ${done} / 9 完了</div>
     ${done===9?'':`<div class="nav" style="margin-top:14px"><button class="next" id="cont">未実施へ進む</button></div>`}
     <button class="send" id="send">今すぐ送信する</button>
+    <div id="sendStatus"></div>
     <button class="export" id="exp">CSVを書き出す（予備）</button>
     <button class="subtle" id="reset">本日分をリセット</button>`;
   if($("cont")) $("cont").onclick=()=>{ cur=firstUndone(); view="run"; render(); };
-  $("send").onclick=()=>{ flushQueue(); };
-  $("exp").onclick=exportCSV; $("reset").onclick=resetToday;
+  $("send").onclick=manualSend; $("exp").onclick=exportCSV; $("reset").onclick=resetToday;
 }
 function renderDone(m){
-  const rows=TASKS.map((t,i)=>{ const e=todayEntry(i);
-    return `<li><div class="mark ${e?(t.type==="choice"&&t.opts.find(o=>o.t===e.content&&o.na)?"na":"done"):""}">✓</div>
-      <div class="li-body"><div class="li-task">${t.no} ${t.name}</div><div class="li-sub">${e.content}　${e.time}</div></div></li>`;
+  const rows=TASKS.map((t,i)=>{ const c=statusCell(t,i);
+    return `<li><div class="mark ${c.cls}">${c.mark==="✓"||c.cls==="done"||c.cls==="na"?(c.cls==="na"?"–":"✓"):c.mark}</div>
+      <div class="li-body"><div class="li-task">${t.no} ${t.name}</div><div class="li-sub">${c.sub}</div></div></li>`;
   }).join("");
   m.innerHTML=`<div class="card alldone">
       <div class="big">本日分すべて完了しました</div>
       <div style="color:var(--steel);font-size:14px;margin-top:6px">担当 ${S.initials}　${today().replace(/-/g,"/")}</div></div>
     <ul class="list">${rows}</ul>
     <button class="send" id="send">今すぐ送信する</button>
+    <div id="sendStatus"></div>
     <button class="export" id="exp">CSVを書き出す（予備）</button>
     <button class="subtle" id="reset">本日分をリセット</button>`;
-  $("send").onclick=()=>{ flushQueue(); };
-  $("exp").onclick=exportCSV; $("reset").onclick=resetToday;
+  $("send").onclick=manualSend; $("exp").onclick=exportCSV; $("reset").onclick=resetToday;
 }
 
 /* ---- 予備のCSV書き出し・リセット ---- */
 function exportCSV(){
   if(S.log.length===0){ alert("書き出すデータがありません。"); return; }
   const head=["日付","イニシャル","No","タスク","実施内容","チェック時刻"];
-  const sorted=[...S.log].sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:a.i-b.i);
+  const sorted=[...S.log].sort((a,b)=> a.date<b.date?-1 : a.date>b.date?1 : (a.i-b.i)||((a.seq||0)-(b.seq||0)));
   const esc=v=>`"${String(v).replace(/"/g,'""')}"`;
   const lines=[head.join(",")].concat(sorted.map(e=>[e.date,e.initials,e.no,e.name,e.content,e.time].map(esc).join(",")));
   const blob=new Blob(["\uFEFF"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
@@ -278,7 +375,7 @@ function resetToday(){
   if(!confirm("本日分のチェックをすべて消します。よろしいですか？")) return;
   S.log=S.log.filter(e=>e.date!==today());
   Object.keys(S.queue).forEach(k=>{ if(k.indexOf(today()+"|")===0) delete S.queue[k]; });
-  save(S); cur=0; view="run"; render();
+  repeatSel=null; save(S); cur=0; view="run"; render();
 }
 
 /* ---- 起動 ---- */
